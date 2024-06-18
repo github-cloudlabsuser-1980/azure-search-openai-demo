@@ -1,35 +1,45 @@
-import os
-from abc import ABC
-from dataclasses import dataclass
+# Import standard libraries
+import os  # Provides a way of using operating system dependent functionality
+from abc import ABC  # Abstract Base Classes (ABCs) to define abstract base classes
+from dataclasses import dataclass  # Decorator and functions for automatically adding special methods to user-defined classes
+
+# Import typing extensions for type hints
 from typing import (
-    Any,
-    AsyncGenerator,
-    Awaitable,
-    Callable,
-    List,
-    Optional,
-    TypedDict,
-    cast,
+    Any,  # Alias for any type
+    AsyncGenerator,  # Type hint for asynchronous generators
+    Awaitable,  # Type hint for objects that can be used in an await expression
+    Callable,  # Type hint for callable objects
+    List,  # Type hint for lists
+    Optional,  # Type hint for optional types
+    TypedDict,  # Type hint for dictionaries with a fixed set of keys
+    cast,  # Function for type casting
 )
-from urllib.parse import urljoin
 
-import aiohttp
-from azure.search.documents.aio import SearchClient
+# Import functions for URL manipulation
+from urllib.parse import urljoin  # Function for joining URLs
+
+# Import third-party libraries for asynchronous HTTP requests and Azure services
+import aiohttp  # Asynchronous HTTP client
+from azure.search.documents.aio import SearchClient  # Asynchronous client for Azure Cognitive Search
 from azure.search.documents.models import (
-    QueryCaptionResult,
-    QueryType,
-    VectorizedQuery,
-    VectorQuery,
+    QueryCaptionResult,  # Model for caption results in queries
+    QueryType,  # Enum for specifying the type of query
+    VectorizedQuery,  # Model for vectorized queries
+    VectorQuery,  # Model for vector queries
 )
-from openai import AsyncOpenAI
-from openai.types.chat import ChatCompletionMessageParam
 
-from core.authentication import AuthenticationHelper
-from text import nonewlines
+# Import OpenAI library for asynchronous API calls
+from openai import AsyncOpenAI  # Asynchronous client for OpenAI
+from openai.types.chat import ChatCompletionMessageParam  # Model for chat completion message parameters
+
+# Import application-specific modules
+from core.authentication import AuthenticationHelper  # Helper class for authentication
+from text import nonewlines  # Function for removing newlines from text
 
 
 @dataclass
 class Document:
+    # Dataclass representing a document with various attributes
     id: Optional[str]
     content: Optional[str]
     embedding: Optional[List[float]]
@@ -44,6 +54,7 @@ class Document:
     reranker_score: Optional[float] = None
 
     def serialize_for_results(self) -> dict[str, Any]:
+        # Method to serialize document attributes for results
         return {
             "id": self.id,
             "content": self.content,
@@ -72,25 +83,26 @@ class Document:
 
     @classmethod
     def trim_embedding(cls, embedding: Optional[List[float]]) -> Optional[str]:
-        """Returns a trimmed list of floats from the vector embedding."""
+        # Class method to trim and format the embedding list
         if embedding:
             if len(embedding) > 2:
-                # Format the embedding list to show the first 2 items followed by the count of the remaining items."""
+                # Format the embedding list to show the first 2 items followed by the count of the remaining items
                 return f"[{embedding[0]}, {embedding[1]} ...+{len(embedding) - 2} more]"
             else:
                 return str(embedding)
-
         return None
 
 
 @dataclass
 class ThoughtStep:
+    # Dataclass representing a step in a thought process
     title: str
     description: Optional[Any]
     props: Optional[dict[str, Any]] = None
 
 
 class Approach(ABC):
+    # Abstract base class representing an approach to solving a problem
     def __init__(
         self,
         search_client: SearchClient,
@@ -105,6 +117,7 @@ class Approach(ABC):
         vision_endpoint: str,
         vision_token_provider: Callable[[], Awaitable[str]],
     ):
+        # Constructor for the Approach class
         self.search_client = search_client
         self.openai_client = openai_client
         self.auth_helper = auth_helper
@@ -118,6 +131,7 @@ class Approach(ABC):
         self.vision_token_provider = vision_token_provider
 
     def build_filter(self, overrides: dict[str, Any], auth_claims: dict[str, Any]) -> Optional[str]:
+        # Method to build a filter for search queries
         exclude_category = overrides.get("exclude_category")
         security_filter = self.auth_helper.build_security_filters(overrides, auth_claims)
         filters = []
@@ -140,6 +154,7 @@ class Approach(ABC):
         minimum_search_score: Optional[float],
         minimum_reranker_score: Optional[float],
     ) -> List[Document]:
+        # Asynchronous method to perform a search
         search_text = query_text if use_text_search else ""
         search_vectors = vectors if use_vector_search else []
         if use_semantic_ranker:
@@ -197,6 +212,7 @@ class Approach(ABC):
     def get_sources_content(
         self, results: List[Document], use_semantic_captions: bool, use_image_citation: bool
     ) -> list[str]:
+        # Method to get the content of sources from search results
         if use_semantic_captions:
             return [
                 (self.get_citation((doc.sourcepage or ""), use_image_citation))
@@ -211,6 +227,7 @@ class Approach(ABC):
             ]
 
     def get_citation(self, sourcepage: str, use_image_citation: bool) -> str:
+        # Method to get the citation for a source
         if use_image_citation:
             return sourcepage
         else:
@@ -223,6 +240,7 @@ class Approach(ABC):
             return sourcepage
 
     async def compute_text_embedding(self, q: str):
+        # Asynchronous method to compute text embedding
         SUPPORTED_DIMENSIONS_MODEL = {
             "text-embedding-ada-002": False,
             "text-embedding-3-small": True,
@@ -245,6 +263,7 @@ class Approach(ABC):
         return VectorizedQuery(vector=query_vector, k_nearest_neighbors=50, fields="embedding")
 
     async def compute_image_embedding(self, q: str):
+        # Asynchronous method to compute image embedding
         endpoint = urljoin(self.vision_endpoint, "computervision/retrieval:vectorizeText")
         headers = {"Content-Type": "application/json"}
         params = {"api-version": "2023-02-01-preview", "modelVersion": "latest"}
@@ -266,6 +285,7 @@ class Approach(ABC):
         session_state: Any = None,
         context: dict[str, Any] = {},
     ) -> dict[str, Any]:
+        # Abstract method to run the approach
         raise NotImplementedError
 
     async def run_stream(
@@ -274,4 +294,5 @@ class Approach(ABC):
         session_state: Any = None,
         context: dict[str, Any] = {},
     ) -> AsyncGenerator[dict[str, Any], None]:
+        # Abstract method to run the approach in a streaming fashion
         raise NotImplementedError
